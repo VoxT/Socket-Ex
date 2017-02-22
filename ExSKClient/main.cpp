@@ -18,11 +18,12 @@
 #include <sys/socket.h>    //socket
 #include <arpa/inet.h> //inet_addr
 #include <iostream>
+#include <limits>
 
 using namespace std;
 
 const uint32_t IO_MSG_MAX = 2000;
-const uint32_t RECV_MSG_MAX = 2055;
+const uint32_t RECV_MSG_MAX = 2048;
 const uint8_t HEADER_SIZE = sizeof(uint32_t);
 
 int g_skClient; // Client socket
@@ -36,7 +37,7 @@ bool SendMessageHandler(const int8_t* uMessage)
     uint32_t uSendSize = 0;
     uint32_t uLenData = 0;
     uint32_t uLenSend = 0;
-    uint8_t uSendBuffer[IO_MSG_MAX + 5] = {0};
+    uint8_t uSendBuffer[IO_MSG_MAX + HEADER_SIZE + 1] = {0};
     
     uLenData = htonl(strlen((char*)uMessage));
     memcpy(uSendBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
@@ -47,7 +48,7 @@ bool SendMessageHandler(const int8_t* uMessage)
     uSendSize = send(g_skClient, uSendBuffer, uLenSend, 0);    
     if (uSendSize != uLenSend)
     {
-        perror("send failed:");
+        perror("send failed");
         return false;
     }
     
@@ -56,16 +57,17 @@ bool SendMessageHandler(const int8_t* uMessage)
 
 std::string RecvMessageHandler()
 {
-    uint32_t uRecvSize;
+    uint32_t uRecvSize = 0;
     uint32_t uLenData = 0;
-    uint8_t uRecvBuffer[6] = {0};
     uint8_t uBytes = 0;
+    uint8_t uRecvBuffer[6] = {0};
     std::string strRecv;
     
     // Receive 4 bytes header
     uRecvSize = recv(g_skClient, &uLenData, HEADER_SIZE, 0);
-    if (uRecvSize != HEADER_SIZE) {
-        perror("recv header failed: ");
+    if (uRecvSize != HEADER_SIZE) 
+    {
+        perror("recv header failed");
         return "";
     }
     uLenData = ntohl(uLenData);
@@ -97,7 +99,7 @@ std::string RecvMessageHandler()
 int main(int argc, char** argv) {
     
     struct sockaddr_in saServer;
-    int8_t uClientMessage[IO_MSG_MAX] = {0};
+    int8_t uIOBuffer[IO_MSG_MAX] = {0};
 
     //Create socket
     g_skClient = socket(AF_INET, SOCK_STREAM, 0);
@@ -136,14 +138,14 @@ int main(int argc, char** argv) {
         std::cout << "Enter message: ";
         
         // Reset buffer
-        memset(uClientMessage, 0, strlen((char*)uClientMessage));
-        std::cin.getline((char*)uClientMessage, IO_MSG_MAX);
+        memset(uIOBuffer, 0, sizeof(uIOBuffer));
+        std::cin.getline((char*)uIOBuffer, IO_MSG_MAX);
         
-        if (!strcmp((char*)uClientMessage, "stop"))
+        if (!strcmp((char*)uIOBuffer, "stop"))
             break;
 
         // Send message
-        if (!SendMessageHandler(uClientMessage))
+        if (!SendMessageHandler(uIOBuffer))
             break;
         
         // Receive Msg

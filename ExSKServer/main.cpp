@@ -47,7 +47,7 @@ std::string GetLastWord(const std::string& str)
     return str.substr(nPos, str.length());
 }
 
-std::string StringHandler(const int& type, const std::string& strOrigin) 
+std::string StringHandler(int type, const std::string& strOrigin) 
 {
     if (type == 1) 
         return GetFirstWord(strOrigin);
@@ -67,7 +67,7 @@ std::string MessageProcess(const std::string& strBuff)
     return strBuff + " is processed.";
 }
 
-std::string RecvMessageHandler(const int& skClient)
+std::string RecvMessageHandler(int skClient)
 {
     uint32_t uReadSize = 0;
     uint32_t uLenData = 0;
@@ -79,21 +79,23 @@ std::string RecvMessageHandler(const int& skClient)
     uReadSize = recv(skClient , &uLenData , HEADER_SIZE, 0);
     if(uReadSize != HEADER_SIZE)
     {
-        std::cout << "recv header failed." << endl;
+        std::cout << "recv header failed" << endl;
         return "";
     }
     uLenData = ntohl(uLenData);
-    if((uLenData >= MSG_MAX) || !uLenData)
+    if((uLenData > MSG_MAX) || !uLenData)
         return "";
 
     // Read data
     while(uLenData > 0)
     {
-        uBytes = std::min(uLenData, (uint32_t)(sizeof(uRecvBuffer) - 1));
+        uBytes = std::min(uLenData, (uint32_t)(sizeof(uRecvBuffer) - 1));        
+        
+        memset(uRecvBuffer, 0, sizeof(uRecvBuffer));
         uReadSize = recv(skClient , uRecvBuffer, uBytes, 0);
         if(uReadSize != uBytes)
         {
-            perror("recv data failed:");
+            perror("recv data failed");
             return "";
         }
         
@@ -109,12 +111,12 @@ std::string RecvMessageHandler(const int& skClient)
  *      true - success
  *      false - failed
  */
-bool SendMessageHandler(const std::string& str, int& skClient)
+bool SendMessageHandler(const std::string& str, int skClient)
 {
     uint32_t uSendSize = 0;
     uint32_t uLenData = 0;
     uint32_t uLenSend = 0;
-    uint8_t uResponseMessage[MSG_MAX] = {0};
+    uint8_t uResponseMessage[MSG_MAX + 1] = {0};
     
     // Init response data
     uLenData = htonl(str.length());
@@ -126,7 +128,7 @@ bool SendMessageHandler(const std::string& str, int& skClient)
     uSendSize = send(skClient , uResponseMessage, uLenSend, 0);
     if (uSendSize != uLenSend)
     {
-        perror("send failed:");
+        perror("send failed");
         return false;
     }
     
