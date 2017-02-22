@@ -24,7 +24,8 @@
 
 using namespace std;
 
-const uint32_t MSG_MAX = 2005;
+const uint32_t MSG_MAX = 2048;
+const uint8_t HEADER_SIZE = sizeof(uint32_t);
 
 std::string GetFirstWord(const std::string& str)
 {
@@ -46,7 +47,7 @@ std::string GetLastWord(const std::string& str)
     return str.substr(nPos, str.length());
 }
 
-std::string StringHandler(int& type, const std::string& strOrigin) 
+std::string StringHandler(const int& type, const std::string& strOrigin) 
 {
     if (type == 1) 
         return GetFirstWord(strOrigin);
@@ -59,40 +60,48 @@ std::string StringHandler(int& type, const std::string& strOrigin)
 
 std::string MessageProcess(const std::string& strBuff)
 {    
-    int uType = atoi(strBuff.substr(0, 1).c_str());
-    std::string strData = strBuff.substr(1, strBuff.length() - 1);
-    
-    return StringHandler(uType, strData) + " is processed.";
+//    int uType = atoi(strBuff.substr(0, 1).c_str());
+//    std::string strData = strBuff.substr(1, strBuff.length() - 1);
+//    
+//    return StringHandler(uType, strData) + " is processed.";
+    return strBuff + " is processed.";
 }
 
 std::string RecvMessageHandler(const int& skClient)
 {
-    int32_t nReadSize = 0;
-    uint32_t nMessageLength = 0;
-    int8_t uClientMessage[MSG_MAX] = {0};
+    uint32_t uReadSize = 0;
+    uint32_t uLenData = 0;
+    uint32_t uBytes = 0;
+    uint8_t uRecvBuffer[6] = {0};
+    std::string strRecv;
     
-//    memset(uClientMessage, 0, strlen((char*)uClientMessage));
      // read 4 bytes (length data)
-    nReadSize = recv(skClient , uClientMessage , 4, 0);
-    if(nReadSize <= 0)
+    uReadSize = recv(skClient , &uLenData , HEADER_SIZE, 0);
+    if(uReadSize != HEADER_SIZE)
+    {
+        std::cout << "recv header failed." << endl;
         return "";
-
-    memcpy(&nMessageLength, uClientMessage, 4);
-    nMessageLength = ntohl(nMessageLength);
-
-    if((nMessageLength >= MSG_MAX) || !nMessageLength)
+    }
+    uLenData = ntohl(uLenData);
+    if((uLenData >= MSG_MAX) || !uLenData)
         return "";
 
     // Read data
-    memset(uClientMessage, 0, 4); // Reset buffer
-    nReadSize = recv(skClient , uClientMessage , nMessageLength, 0);
-    if((nReadSize <= 0) || (nReadSize != nMessageLength))
+    while(uLenData > 0)
     {
-        perror("recv failed:");
-        return "";
+        uBytes = std::min(uLenData, (uint32_t)(sizeof(uRecvBuffer) - 1));
+        uReadSize = recv(skClient , uRecvBuffer, uBytes, 0);
+        if(uReadSize != uBytes)
+        {
+            perror("recv data failed:");
+            return "";
+        }
+        
+        strRecv += std::string((char*)uRecvBuffer);
+        uLenData -= uBytes;
     }
     
-    return (char*) uClientMessage;
+    return strRecv;
 }
 
 /*
@@ -102,22 +111,20 @@ std::string RecvMessageHandler(const int& skClient)
  */
 bool SendMessageHandler(const std::string& str, int& skClient)
 {
-    int32_t nSendSize = 0;
-    uint32_t nMessageLength = 0;
-    int8_t uResponseMessage[MSG_MAX+50] = {0};
+    uint32_t uSendSize = 0;
+    uint32_t uLenData = 0;
+    uint32_t uLenSend = 0;
+    uint8_t uResponseMessage[MSG_MAX] = {0};
     
     // Init response data
-    nMessageLength = htonl(str.length());
-    memcpy(uResponseMessage, &nMessageLength, sizeof(nMessageLength)); // Set header
-    memcpy(uResponseMessage+4, str.c_str(), str.length()); // Set data
-
-    // Send data
-    nSendSize = send(skClient , uResponseMessage, str.length()+4, 0);
+    uLenData = htonl(str.length());
+    memcpy(uResponseMessage, &uLenData, HEADER_SIZE); // Set header
+    memcpy(uResponseMessage + HEADER_SIZE, str.c_str(), str.length()); // Set data
+    uLenSend = HEADER_SIZE + str.length();
     
-    // Reset buffer
-//    memset(uResponseMessage, 0, str.length()+4);
-        
-    if ((nSendSize < 0) || (nSendSize != (str.length()+4)))
+    // Send data
+    uSendSize = send(skClient , uResponseMessage, uLenSend, 0);
+    if (uSendSize != uLenSend)
     {
         perror("send failed:");
         return false;
@@ -209,7 +216,6 @@ int main(int argc, char** argv) {
     nAddrLen = sizeof(struct sockaddr_in);   
     while ((skClient = accept(skListen, (struct sockaddr *)&saClient, (socklen_t*)&nAddrLen)) >= 0)
     {
-
         std::cout << "New connection accepted" << endl;
          
         pthread_t pthHandler;

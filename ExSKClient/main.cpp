@@ -23,6 +23,7 @@ using namespace std;
 
 const uint32_t IO_MSG_MAX = 2000;
 const uint32_t RECV_MSG_MAX = 2055;
+const uint8_t HEADER_SIZE = sizeof(uint32_t);
 
 int g_skClient; // Client socket
 
@@ -32,22 +33,19 @@ bool SendMessageHandler(const int8_t* uMessage)
     if (!uMessage)
         return false;
     
-    int32_t nSendSize = 0;
-    int8_t uSendMessage[IO_MSG_MAX+5] = {0};
+    uint32_t uSendSize = 0;
+    uint32_t uLenData = 0;
+    uint32_t uLenSend = 0;
+    uint8_t uSendBuffer[IO_MSG_MAX + 5] = {0};
     
-    uint32_t nStringLength = strlen((char*)uMessage);
-    uint32_t nDataLength = htonl(nStringLength);
-
-    memcpy(uSendMessage, &nDataLength, sizeof(int32_t)); // Set 4 bytes data length header
-    memcpy(uSendMessage+4, uMessage, nStringLength); // Set data
+    uLenData = htonl(strlen((char*)uMessage));
+    memcpy(uSendBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
+    memcpy(uSendBuffer + HEADER_SIZE, uMessage, strlen((char*)uMessage)); // Set data
+    uLenSend = HEADER_SIZE  + strlen((char*)uMessage);
     
 //    cout << strlen((char*)uSendMessage) << endl; output uncorrect because of 4 bytes header
-    nSendSize = send(g_skClient, uSendMessage, (nStringLength + 4), 0);
-    
-    // Reset buffer
-//    memset(uSendMessage, 0, sizeof(uSendMessage));
-    
-    if ((nSendSize < 0) || (nSendSize != (nStringLength + 4)) )
+    uSendSize = send(g_skClient, uSendBuffer, uLenSend, 0);    
+    if (uSendSize != uLenSend)
     {
         perror("send failed:");
         return false;
@@ -58,38 +56,39 @@ bool SendMessageHandler(const int8_t* uMessage)
 
 std::string RecvMessageHandler()
 {
-    int32_t nRecvSize;
-    uint32_t nMessageLength = 0;
-    int8_t uServerReply[RECV_MSG_MAX] = {0};
-    
-//    memset(uServerReply, 0, strlen((char*)uServerReply));
+    uint32_t uRecvSize;
+    uint32_t uLenData = 0;
+    uint8_t uRecvBuffer[6] = {0};
+    uint8_t uBytes = 0;
+    std::string strRecv;
     
     // Receive 4 bytes header
-    nRecvSize = recv(g_skClient, uServerReply, 4, 0);
-    if (nRecvSize < 0) {
-        perror("recv failed: ");
+    uRecvSize = recv(g_skClient, &uLenData, HEADER_SIZE, 0);
+    if (uRecvSize != HEADER_SIZE) {
+        perror("recv header failed: ");
         return "";
     }
-    memcpy(&nMessageLength, uServerReply, 4);
-    nMessageLength = ntohl(nMessageLength);
-    if (!nMessageLength || (nMessageLength >= RECV_MSG_MAX))
+    uLenData = ntohl(uLenData);
+    if (!uLenData || (uLenData >= RECV_MSG_MAX))
         return "";
 
     //Receive a reply from the server
-    memset(uServerReply, 0, 4);
-    nRecvSize = recv(g_skClient, uServerReply, nMessageLength, 0);
-    if ((nRecvSize < 0) || (nRecvSize != nMessageLength)) {
-        perror("recv failed: ");
-        return "";
-    }
-
-    if (nRecvSize == 0)
+    while(uLenData > 0)
     {
-        std::cout << "server timeout!" << endl;
-        return "";
+        uBytes = std::min(uLenData, (uint32_t)(sizeof(uRecvBuffer) - 1));
+        
+        memset(uRecvBuffer, 0, sizeof(uRecvBuffer));
+        uRecvSize = recv(g_skClient, uRecvBuffer, uBytes, 0);
+        if (uRecvSize != uBytes) {
+            perror("recv data failed: ");
+            return "";
+        }
+        
+        strRecv += std::string((char*)uRecvBuffer);
+        uLenData -= uBytes;
     }
 
-    return (char*)uServerReply;
+    return strRecv;
 }
 
 /*  
@@ -135,6 +134,9 @@ int main(int argc, char** argv) {
     //keep communicating with server
     while(true) {
         std::cout << "Enter message: ";
+        
+        // Reset buffer
+        memset(uClientMessage, 0, strlen((char*)uClientMessage));
         std::cin.getline((char*)uClientMessage, IO_MSG_MAX);
         
         if (!strcmp((char*)uClientMessage, "stop"))
@@ -150,8 +152,6 @@ int main(int argc, char** argv) {
             break;
         
         std::cout << "Server reply: " << strResponseMsg << endl;
-        // Reset buffer
-        memset(uClientMessage, 0, strlen((char*)uClientMessage));
     }
 
     close(g_skClient);
